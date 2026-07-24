@@ -6,6 +6,7 @@ coverage/
 .DS_Store
 
 target/
+.worktrees/
 
 # npm platform-binary staging (built in CI / locally before publish)
 /packages/

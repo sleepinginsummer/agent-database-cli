@@ -29,6 +29,7 @@ agent-database-cli test --db local-mysql                 # test a connection
 agent-database-cli exec --db local-mysql --command "select 1"
 agent-database-cli meta --db local-mysql --type tables   # tables/columns/collections/keys
 agent-database-cli --format table exec --db local-mysql --command "select 1"
+agent-database-cli format table                          # persist a default format (--clear resets)
 ```
 
 For many queries in a row, reuse one connection:
@@ -37,7 +38,7 @@ For many queries in a row, reuse one connection:
 printf 'select 1\nselect count(*) from accounts\n' | agent-database-cli repl --db local-mysql
 ```
 
-**MCP server** (`agent-database-cli-mcp`) — stateful session for agents. `use_database` sets the active db, then `query` / `describe`:
+**MCP server** (`agent-database-cli-mcp`) — for agents. Stateless tools (`query` / `describe` / `list_databases` / `help`); each call names its database and the first query per database opens a connection that stays warm for the rest of the session:
 
 ```bash
 claude mcp add agent-db -- agent-database-cli-mcp
@@ -49,6 +50,7 @@ File: `~/.agent-database-cli/config.json` (override with `AGENT_DATABASE_CLI_CON
 
 ```json
 {
+  "defaultFormat": "table",
   "databases": {
     "local-mysql": {
       "type": "mysql",
@@ -65,6 +67,8 @@ File: `~/.agent-database-cli/config.json` (override with `AGENT_DATABASE_CLI_CON
   }
 }
 ```
+
+Top-level `defaultFormat` (optional) sets the output format used when `--format` is not passed (`compact` | `json` | `table`); without it, row-producing commands default to `compact` and the rest to `json`. Manage it with `agent-database-cli format [<format>|--clear]` instead of editing the file.
 
 Per-connection fields:
 

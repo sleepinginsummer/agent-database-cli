@@ -113,7 +113,7 @@ The first time a connection is used, the CLI encrypts the plaintext database URL
 
 ## Global Parameters
 
-- `--format <format>`: output format, supports `compact`, `json`, or `table`. Default is `compact` for row-producing commands (`exec`, `meta`) and `json` for structural commands (`list`, `test`, `install-skill`). `compact` is single-line JSON with column names listed once in `fields` and each row as a positional array (most token-efficient); `json` is pretty-printed with keys repeated per row; `table` is a padded text table for human reading.
+- `--format <format>`: output format, supports `compact`, `json`, or `table`. The default comes from the config file's top-level `defaultFormat` field when set; otherwise `compact` for row-producing commands (`exec`, `meta`) and `json` for structural commands (`list`, `test`, `install-skill`). `compact` is single-line JSON with column names listed once in `fields` and each row as a positional array (most token-efficient); `json` is minified single-line JSON with keys repeated per row; `table` is a padded text table for human reading.
 - `--help`, `-h`: print help
 - `--version`, `-V`: print version
 
@@ -197,6 +197,16 @@ Return values:
 
 - On success, outputs the query result to stdout
 - A metadata type not supported by the current database fails and returns an error
+
+## format
+
+Show, set, or clear the default output format (stored as top-level `defaultFormat` in the config file; `--format` on any call still overrides it).
+
+```bash
+agent-database-cli format             # show: { "defaultFormat": "table" } or null
+agent-database-cli format table       # persist table as the default
+agent-database-cli format --clear     # remove it, restoring built-in defaults
+```
 
 ## Oracle SQLcl
 

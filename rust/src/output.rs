@@ -6,7 +6,7 @@ use serde_json::Value;
 pub fn write_output<T: Serialize>(data: &T, format: OutputFormat) -> Result<()> {
     match format {
         OutputFormat::Json => {
-            println!("{}", serde_json::to_string_pretty(data)?);
+            println!("{}", serde_json::to_string(data)?);
         }
         OutputFormat::Table => {
             println!("{}", format_table(&serde_json::to_value(data)?));
@@ -21,7 +21,7 @@ pub fn write_output<T: Serialize>(data: &T, format: OutputFormat) -> Result<()> 
 /// Render rows as compact array-of-rows JSON: column names are listed once in
 /// `fields`, and each row becomes a positional array aligned to that order.
 /// Stays valid, machine-parseable JSON (escaping and number/string/null types
-/// preserved) while dropping the per-row key repetition of pretty JSON.
+/// preserved) while dropping the per-row key repetition of keyed JSON.
 fn format_compact(data: &Value) -> Result<String> {
     let rows = if let Some(rows) = data.get("rows").and_then(Value::as_array) {
         rows.clone()
@@ -180,14 +180,14 @@ mod tests {
     }
 
     #[test]
-    fn compact_output_is_smaller_than_pretty_json() {
+    fn compact_output_is_smaller_than_minified_json() {
         let data = json!({
             "fields": ["id", "name"],
             "rows": [{"id": 1, "name": "Alice"}, {"id": 2, "name": "Bob"}]
         });
         let compact = format_compact(&data).unwrap();
-        let pretty = serde_json::to_string_pretty(&data).unwrap();
-        assert!(compact.len() < pretty.len());
+        let minified = serde_json::to_string(&data).unwrap();
+        assert!(compact.len() < minified.len());
     }
 
     #[test]

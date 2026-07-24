@@ -122,6 +122,67 @@ fn validate_database_config(name: &str, db: &DatabaseConfig) -> Result<()> {
     Ok(())
 }
 
+/// Best-effort read of the top-level `defaultFormat` config field, used as the
+/// output format when `--format` is not given. Returns None when the config
+/// file is missing, unreadable, or not valid JSON — those problems surface
+/// later, on commands that actually need the config — so `list` keeps working
+/// without one. The value is returned raw; the caller validates it.
+pub fn default_output_format() -> Option<String> {
+    let path = resolve_config_path().ok()?;
+    default_output_format_at(&path)
+}
+
+fn default_output_format_at(path: &PathBuf) -> Option<String> {
+    let raw = fs::read_to_string(path).ok()?;
+    let root: Value = serde_json::from_str(&raw).ok()?;
+    root.get("defaultFormat")
+        .and_then(Value::as_str)
+        .map(str::to_string)
+}
+
+/// Persist (or clear, when `value` is None) the top-level `defaultFormat`
+/// field, preserving everything else in the config file. Creates the file if
+/// it does not exist yet.
+pub fn set_default_output_format(value: Option<&str>) -> Result<PathBuf> {
+    let path = resolve_config_path()?;
+    set_default_output_format_at(&path, value)?;
+    Ok(path)
+}
+
+fn set_default_output_format_at(path: &PathBuf, value: Option<&str>) -> Result<()> {
+    let mut root: Value = match fs::read_to_string(path) {
+        Ok(raw) => serde_json::from_str(&raw).context("config file is not valid JSON")?,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            serde_json::json!({ "databases": {} })
+        }
+        Err(error) => {
+            return Err(error)
+                .with_context(|| format!("failed to read config file: {}", path.display()))
+        }
+    };
+    let object = root
+        .as_object_mut()
+        .context("config file root must be a JSON object")?;
+    match value {
+        Some(format) => {
+            object.insert(
+                "defaultFormat".to_string(),
+                Value::String(format.to_string()),
+            );
+        }
+        None => {
+            object.remove("defaultFormat");
+        }
+    }
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let tmp = path.with_extension("tmp");
+    fs::write(&tmp, serde_json::to_vec_pretty(&root)?)?;
+    fs::rename(&tmp, path)?;
+    Ok(())
+}
+
 pub fn get_database_config<'a>(config: &'a AppConfig, name: &str) -> Result<&'a DatabaseConfig> {
     config
         .databases
@@ -296,6 +357,54 @@ mod tests {
         let dir = env::temp_dir().join(format!("agent-database-cli-{name}-{unique}"));
         fs::create_dir_all(&dir).expect("failed to create temp directory");
         dir.join("config.json")
+    }
+
+    #[test]
+    fn default_output_format_reads_top_level_field() {
+        let path = temp_config_path("default-format");
+        fs::write(
+            &path,
+            r#"{ "defaultFormat": "table", "databases": {} }"#,
+        )
+        .expect("failed to write config");
+        assert_eq!(default_output_format_at(&path), Some("table".to_string()));
+    }
+
+    #[test]
+    fn default_output_format_absent_or_unreadable_is_none() {
+        let path = temp_config_path("no-default-format");
+        fs::write(&path, r#"{ "databases": {} }"#).expect("failed to write config");
+        assert_eq!(default_output_format_at(&path), None);
+        assert_eq!(
+            default_output_format_at(&path.with_extension("missing")),
+            None
+        );
+    }
+
+    #[test]
+    fn set_default_output_format_creates_updates_and_clears() {
+        let path = temp_config_path("set-default-format");
+
+        // creates the file when missing
+        set_default_output_format_at(&path, Some("table")).expect("failed to set format");
+        assert_eq!(default_output_format_at(&path), Some("table".to_string()));
+
+        // updates in place, preserving other fields
+        fs::write(
+            &path,
+            r#"{ "defaultFormat": "table", "databases": { "db": { "type": "redis", "url": "redis://x" } } }"#,
+        )
+        .expect("failed to write config");
+        set_default_output_format_at(&path, Some("compact")).expect("failed to update format");
+        assert_eq!(default_output_format_at(&path), Some("compact".to_string()));
+        let raw = fs::read_to_string(&path).expect("failed to read config");
+        assert!(raw.contains("redis://x"));
+
+        // clears without touching the rest
+        set_default_output_format_at(&path, None).expect("failed to clear format");
+        assert_eq!(default_output_format_at(&path), None);
+        let raw = fs::read_to_string(&path).expect("failed to read config");
+        assert!(raw.contains("redis://x"));
     }
 
     #[test]

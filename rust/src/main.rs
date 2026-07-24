@@ -30,7 +30,7 @@ For many queries, stream statements into `repl` (one reused connection), or run 
 read-only by default."
 )]
 struct Cli {
-    #[arg(long, value_parser = ["json", "table", "compact"], help = "Output format (default: compact for exec/meta, json otherwise)")]
+    #[arg(long, value_parser = ["json", "table", "compact"], help = "Output format (default: the config file's defaultFormat if set, else compact for exec/meta, json otherwise)")]
     format: Option<String>,
     #[command(subcommand)]
     command: Commands,
@@ -84,6 +84,23 @@ enum Commands {
         #[arg(long, help = "Match pattern; used by --type keys (Redis SCAN)")]
         pattern: Option<String>,
     },
+    #[command(
+        name = "format",
+        about = "Show or set the default output format (persisted as defaultFormat in the config file; `--format` still overrides per call)"
+    )]
+    Format {
+        #[arg(
+            value_parser = ["json", "table", "compact"],
+            help = "Format to persist as the default; omit to show the current setting"
+        )]
+        format: Option<String>,
+        #[arg(
+            long,
+            conflicts_with = "format",
+            help = "Remove the persisted default, restoring the built-in defaults"
+        )]
+        clear: bool,
+    },
     #[command(name = "install-skill", about = "Install or update the Agent skill")]
     InstallSkill(InstallSkillArgs),
 }
@@ -108,7 +125,11 @@ async fn run() -> Result<()> {
     let cli = Cli::parse();
     let format = match &cli.format {
         Some(value) => parse_output_format(value)?,
-        None => default_format_for(&cli.command),
+        None => match config::default_output_format() {
+            Some(value) => parse_output_format(&value)
+                .context("invalid defaultFormat in the config file")?,
+            None => default_format_for(&cli.command),
+        },
     };
     let data = match cli.command {
         Commands::List => runtime::run_list().await?,
@@ -134,16 +155,28 @@ async fn run() -> Result<()> {
             };
             serde_json::to_value(runtime::run_metadata(&db, request).await?)?
         }
+        Commands::Format { format, clear } => {
+            if clear {
+                let path = config::set_default_output_format(None)?;
+                serde_json::json!({ "ok": true, "defaultFormat": null, "configPath": path })
+            } else if let Some(value) = format {
+                let path = config::set_default_output_format(Some(&value))?;
+                serde_json::json!({ "ok": true, "defaultFormat": value, "configPath": path })
+            } else {
+                serde_json::json!({ "defaultFormat": config::default_output_format() })
+            }
+        }
         Commands::InstallSkill(args) => install_skill(args)?,
     };
     output::write_output(&data, format)?;
     Ok(())
 }
 
-/// Default output format when `--format` is not given. Row-producing commands
-/// (`exec`, `meta`) default to the token-efficient `compact` form; structural
-/// commands keep their natural JSON object so outputs like `{"ok":true}` aren't
-/// coerced into a `fields`/`rows` envelope.
+/// Built-in default output format, used when neither `--format` nor the config
+/// file's `defaultFormat` is given. Row-producing commands (`exec`, `meta`)
+/// default to the token-efficient `compact` form; structural commands keep
+/// their natural JSON object so outputs like `{"ok":true}` aren't coerced into
+/// a `fields`/`rows` envelope.
 fn default_format_for(command: &Commands) -> OutputFormat {
     match command {
         Commands::Execute { .. } | Commands::Metadata { .. } => OutputFormat::Compact,

@@ -15,15 +15,15 @@ Numbers are environment-specific — they depend on your OS, where the database 
 
 The headline: for a **single** command, establishing the connection (TCP + auth, plus decrypting the stored credential, plus a TLS handshake when the server requires it) dominates — roughly **100 ms** of the ~130 ms `exec` total, versus only ~28 ms for process spawn. Reusing one connection (`repl`) amortizes that fixed cost away: across a large batch each statement costs under a millisecond.
 
-> Numbers measured against a local plaintext Postgres. A remote or TLS-required server (e.g. AWS RDS) adds network round-trips and a TLS handshake to the connection step, so the one-off `exec` and per-call MCP cost grow accordingly — which makes reusing the connection via `repl` matter even more.
+> Numbers measured against a local plaintext Postgres. A remote or TLS-required server (e.g. AWS RDS) adds network round-trips and a TLS handshake to the connection step, so the one-off `exec` cost grows accordingly — which makes reusing the connection (`repl`, or the MCP server's warm sessions) matter even more.
 
 ## Core principle: reuse the connection for high-frequency work
 
 ```
-One-off (exec / MCP call): spawn ─► connect (TCP/TLS/auth) ─► query ─► disconnect
+One-off (exec):            spawn ─► connect (TCP/TLS/auth) ─► query ─► disconnect
                                     └──────── dominant ───────┘   (paid every call)
 
-Batch (repl):              spawn ─► connect ─► query ─► query ─► query ─► ...
+Batch (repl / MCP query):  spawn ─► connect ─► query ─► query ─► query ─► ...
                                     (paid once)        └─ ~0.3 ms each ─┘
 ```
 
@@ -42,6 +42,6 @@ Secondary, already-applied optimizations on the per-command path:
   printf 'select 1\nselect count(*) from accounts\n' | agent-database-cli repl --db <name>
   ```
   Under a millisecond per statement once the connection is set up (~0.7 ms each across a large batch).
-- **Agent that queries continuously**: the MCP server (`agent-database-cli-mcp`) keeps the **session context** (active database via `use_database`) alive, but each `query` / `describe` invokes the CLI binary directly, so it pays a fresh connection per call like `exec`. For tight query loops where latency matters, prefer `repl`.
+- **Agent that queries continuously**: the MCP server (`agent-database-cli-mcp`) holds a warm `repl` child per database — the first `query` against a database pays the spawn + connect once, and every later `query` streams over that reused connection (single-digit milliseconds, measured ~3 ms). Different databases get their own children, so multi-db queries run concurrently. Idle children close after 5 minutes (`AGENT_DATABASE_CLI_MCP_IDLE_MS`) and respawn on demand. `describe` remains a one-shot CLI invocation.
 
 > Always measure before optimizing. On this project the connection cost — invisible until measured — is now the dominant term for one-off commands; without the daemon it is paid per call rather than amortized across a warm pool. Choose `repl` when that matters.
