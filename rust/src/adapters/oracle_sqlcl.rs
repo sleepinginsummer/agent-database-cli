@@ -4,7 +4,8 @@ use crate::utils::masking::mask_secret;
 use anyhow::Result;
 use async_trait::async_trait;
 use serde_json::Value;
-use std::{fs, path::Path, process::Command};
+use std::{fs, path::Path, process::Stdio};
+use tokio::process::Command;
 use url::Url;
 use uuid::Uuid;
 
@@ -23,31 +24,38 @@ impl OracleSqlclAdapter {
         }
     }
 
-    fn run_sqlcl(&self, command: &str) -> Result<QueryResult> {
+    async fn run_sqlcl(&self, command: &str) -> Result<QueryResult> {
         let markers = Markers::new();
         let dir = std::env::temp_dir().join(format!("agent-database-cli-sqlcl-{}", Uuid::new_v4()));
         fs::create_dir_all(&dir)?;
         let script_path = dir.join("command.sql");
         fs::write(&script_path, self.build_script(command, &markers))?;
-        let result = self.spawn_sqlcl(&script_path, &markers);
+        let result = self.spawn_sqlcl(&script_path, &markers).await;
         let _ = fs::remove_dir_all(&dir);
         result
     }
 
-    fn spawn_sqlcl(&self, script_path: &Path, markers: &Markers) -> Result<QueryResult> {
+    async fn spawn_sqlcl(&self, script_path: &Path, markers: &Markers) -> Result<QueryResult> {
         let mut command = Command::new(&self.sqlcl_path);
         command
             .arg("-S")
             .arg("/nolog")
             .arg(format!("@{}", script_path.display()))
             .env("NO_COLOR", "1")
-            .env("TERM", "dumb");
+            .env("TERM", "dumb")
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .kill_on_drop(true);
         if let Some(java_home) = &self.java_home {
             command.env("JAVA_HOME", java_home);
         }
-        let output = command
-            .output()
+        let child = command
+            .spawn()
             .map_err(|error| anyhow::anyhow!("SQLcl 启动失败: {}", error))?;
+        let output = child
+            .wait_with_output()
+            .await
+            .map_err(|error| anyhow::anyhow!("SQLcl 等待失败: {}", error))?;
         let stdout = strip_ansi(&String::from_utf8_lossy(&output.stdout));
         let stderr = strip_ansi(&String::from_utf8_lossy(&output.stderr));
         let combined = [stdout.trim(), stderr.trim()]
@@ -98,7 +106,7 @@ impl DatabaseAdapter for OracleSqlclAdapter {
         self.execute("select 1 from dual").await.map(|_| ())
     }
     async fn execute(&mut self, command: &str) -> Result<QueryResult> {
-        self.run_sqlcl(command)
+        self.run_sqlcl(command).await
     }
     async fn metadata(&mut self, request: MetadataRequest) -> Result<QueryResult> {
         match request.request_type {

@@ -120,7 +120,7 @@ AGENT_DATABASE_CLI_CONFIG=/path/to/config.json agent-database-cli list
 | `sshTunnel` | 全部数据库 | 无 | SSH 隧道配置；单机模式转发数据库 URL 的 host/port，Redis 集群模式为每个节点分别建立本地转发 |
 | `readonly` | 全部数据库 | `true` | 是否启用只读模式；仅在明确需要写入时才建议显式设为 `false` |
 | `blacklist` | 全部数据库 | 无 | 命令黑名单数组，大小写不敏感 |
-| `keepAliveSeconds` | 全部数据库 | `180` | 单个数据库连接空闲释放秒数 |
+| `keepAliveSeconds` | 全部数据库 | `600` | 单个数据库连接空闲释放秒数 |
 
 PostgreSQL URL 支持 `sslmode` 参数：`disable`、`prefer`、`require`、`verify-ca`、`verify-full`。例如云数据库常用 `postgres://user:password@host:5432/app?sslmode=require`；生产环境需要校验证书时优先使用 `verify-full`。
 
@@ -176,7 +176,7 @@ SSH 隧道配置支持密码、私钥、密码加私钥、带通行短语的私�
       "url": "mysql://user:password@localhost:3306/app",
       "readonly": true,
       "blacklist": ["drop", "truncate", "delete"],
-      "keepAliveSeconds": 180
+      "keepAliveSeconds": 600
     },
     "remote-mysql": {
       "type": "mysql",
@@ -189,14 +189,14 @@ SSH 隧道配置支持密码、私钥、密码加私钥、带通行短语的私�
         "passphrase": "key-passphrase"
       },
       "readonly": true,
-      "keepAliveSeconds": 180
+      "keepAliveSeconds": 600
     },
     "redis-standalone": {
       "type": "redis",
       "url": "redis://localhost:6379",
       "readonly": false,
       "blacklist": ["flushall", "flushdb"],
-      "keepAliveSeconds": 180
+      "keepAliveSeconds": 600
     },
     "redis-cluster": {
       "type": "redis",
@@ -210,7 +210,7 @@ SSH 隧道配置支持密码、私钥、密码加私钥、带通行短语的私�
       },
       "readonly": true,
       "blacklist": ["flushall", "flushdb"],
-      "keepAliveSeconds": 180
+      "keepAliveSeconds": 600
     },
     "redis-cluster-via-ssh": {
       "type": "redis",
@@ -230,7 +230,7 @@ SSH 隧道配置支持密码、私钥、密码加私钥、带通行短语的私�
       },
       "readonly": true,
       "blacklist": ["flushall", "flushdb"],
-      "keepAliveSeconds": 180
+      "keepAliveSeconds": 600
     },
     "oracle-test": {
       "type": "oracle",
@@ -240,7 +240,7 @@ SSH 隧道配置支持密码、私钥、密码加私钥、带通行短语的私�
       "javaHome": "/Applications/IntelliJ IDEA Ultimate.app/Contents/jbr/Contents/Home",
       "readonly": true,
       "blacklist": ["drop", "truncate", "delete", "update", "insert", "merge", "alter", "create"],
-      "keepAliveSeconds": 180
+      "keepAliveSeconds": 600
     }
   }
 }
@@ -304,7 +304,7 @@ MongoDB 常见高危命令：
   "url": "mysql://user:password@prod-db:3306/app",
   "readonly": true,
   "blacklist": ["drop", "truncate", "delete", "update", "insert", "alter", "create"],
-  "keepAliveSeconds": 180
+  "keepAliveSeconds": 600
 }
 ```
 
@@ -316,7 +316,7 @@ MongoDB 常见高危命令：
   "url": "postgres://user:password@write-db:5432/app",
   "readonly": false,
   "blacklist": ["drop", "truncate", "alter"],
-  "keepAliveSeconds": 180
+  "keepAliveSeconds": 600
 }
 ```
 
@@ -371,3 +371,14 @@ rm -rf ~/.agent-database-cli
 ## 友情链接
 
 - [LINUX DO - 新的理想型社区](https://linux.do/)
+
+## 环境变量（daemon）
+
+这些变量在 **daemon 进程启动时** 读取；修改后需要 `daemon stop` 再让下一次命令拉起新 daemon，才会生效。
+
+| 变量 | 默认 | 说明 |
+| --- | --- | --- |
+| `AGENT_DB_QUERY_TIMEOUT_SECS` | `60` | 单次 test / execute / metadata 的响应超时（秒）。超时后客户端停止等待；Oracle SQLcl 会 kill 子进程，Oracle 原生驱动会设置 OCI call timeout。 |
+| `AGENT_DB_DAEMON_IDLE_SECS` | `1800` | daemon 在无 in-flight 请求且空闲达到该秒数后自动退出。 |
+
+连接级 `keepAliveSeconds` 默认已改为 `600`（未配置时）。

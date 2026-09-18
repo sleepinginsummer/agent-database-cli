@@ -31,8 +31,8 @@ What it can do:
 - Execute SQL, Redis commands, or MongoDB JSON commands against a specified database
 - Query database metadata such as tables, columns, collections, and Redis keys. Redis keys metadata uses cursor-based `SCAN` instead of blocking `KEYS`
 - Enable read-only mode and command blocklists per database configuration
-- Auto-start the local daemon on demand; the daemon exits after `300` idle seconds by default
-- Keep connections alive through the local daemon; each database connection is released after `180` idle seconds by default
+- Auto-start the local daemon on demand; the daemon exits after `1800` idle seconds by default (override with `AGENT_DB_DAEMON_IDLE_SECS`)
+- Keep connections alive through the local daemon; each database connection is released after `600` idle seconds by default
 - Oracle uses SQLcl by default; native `oracle`/`oracledb` drivers can be selected explicitly when Oracle Instant Client is available
 - Never store or print unmasked passwords, tokens, or secrets
 - Use named pipes on Windows and Unix sockets on macOS/Linux for the daemon
@@ -125,7 +125,7 @@ The configuration file is an object. Each key under `databases` is a database co
 - `database`: Optional default MongoDB database name
 - `readonly`: Whether read-only mode is enabled, default `true`; only explicitly set `false` when write access is really required
 - `blacklist`: Command blocklist array, case-insensitive
-- `keepAliveSeconds`: Idle release timeout in seconds for a single database connection, default `180`
+- `keepAliveSeconds`: Idle release timeout in seconds for a single database connection, default `600`
 - `oracleDriver`: Oracle driver, supports `sqlcl`, `oracle`, or `oracledb`; defaults to `sqlcl` when omitted
 - `sqlclPath`: SQLcl executable path, used only when `oracleDriver` is `sqlcl`
 - `javaHome`: Optional `JAVA_HOME` used by SQLcl
@@ -176,7 +176,7 @@ Reference configuration:
       "url": "mysql://user:password@localhost:3306/app",
       "readonly": true,
       "blacklist": ["drop", "truncate", "delete"],
-      "keepAliveSeconds": 180
+      "keepAliveSeconds": 600
     },
     "remote-mysql": {
       "type": "mysql",
@@ -189,14 +189,14 @@ Reference configuration:
         "passphrase": "key-passphrase"
       },
       "readonly": true,
-      "keepAliveSeconds": 180
+      "keepAliveSeconds": 600
     },
     "redis-standalone": {
       "type": "redis",
       "url": "redis://localhost:6379",
       "readonly": false,
       "blacklist": ["flushall", "flushdb"],
-      "keepAliveSeconds": 180
+      "keepAliveSeconds": 600
     },
     "redis-cluster": {
       "type": "redis",
@@ -210,7 +210,7 @@ Reference configuration:
       },
       "readonly": true,
       "blacklist": ["flushall", "flushdb"],
-      "keepAliveSeconds": 180
+      "keepAliveSeconds": 600
     },
     "redis-cluster-via-ssh": {
       "type": "redis",
@@ -230,7 +230,7 @@ Reference configuration:
       },
       "readonly": true,
       "blacklist": ["flushall", "flushdb"],
-      "keepAliveSeconds": 180
+      "keepAliveSeconds": 600
     },
     "oracle-test": {
       "type": "oracle",
@@ -240,7 +240,7 @@ Reference configuration:
       "javaHome": "/Applications/IntelliJ IDEA Ultimate.app/Contents/jbr/Contents/Home",
       "readonly": true,
       "blacklist": ["drop", "truncate", "delete", "update", "insert", "merge", "alter", "create"],
-      "keepAliveSeconds": 180
+      "keepAliveSeconds": 600
     }
   }
 }
@@ -303,7 +303,7 @@ Recommended for production databases:
   "url": "mysql://user:password@prod-db:3306/app",
   "readonly": true,
   "blacklist": ["drop", "truncate", "delete", "update", "insert", "alter", "create"],
-  "keepAliveSeconds": 180
+  "keepAliveSeconds": 600
 }
 ```
 
@@ -315,7 +315,7 @@ Recommended for a dedicated writable connection:
   "url": "postgres://user:password@write-db:5432/app",
   "readonly": false,
   "blacklist": ["drop", "truncate", "alter"],
-  "keepAliveSeconds": 180
+  "keepAliveSeconds": 600
 }
 ```
 
@@ -375,3 +375,14 @@ Oracle keeps two first-class drivers: omitting `oracleDriver` uses SQLcl; native
 ## Friendly Links
 
 - [LINUX DO - A New Ideal Community](https://linux.do/)
+
+## Environment variables (daemon)
+
+These are read when the **daemon process starts**. After changing them, run `daemon stop` and let the next command start a fresh daemon.
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `AGENT_DB_QUERY_TIMEOUT_SECS` | `60` | Response timeout (seconds) for a single test / execute / metadata call. On timeout the client stops waiting; Oracle SQLcl kills the child process, and the native Oracle driver also sets an OCI call timeout. |
+| `AGENT_DB_DAEMON_IDLE_SECS` | `1800` | Daemon exits after this many idle seconds with no in-flight requests. |
+
+Per-connection `keepAliveSeconds` now defaults to `600` when unset.

@@ -14,8 +14,8 @@ description: 使用本地 agent-database-cli 安全操作已配置的数据库�
 - 执行 SQL、Redis 命令或 MongoDB JSON 命令
 - 查询表、列、集合、Redis keys 等元信息
 - 按单个数据库配置执行命令黑名单和只读模式
-- 普通命令会按需自动启动本地 daemon，daemon 默认空闲 `300` 秒后自动退出
-- 通过本地 daemon 短时间保持连接，单个数据库连接默认空闲 `180` 秒释放
+- 普通命令会按需自动启动本地 daemon，daemon 默认空闲 `1800` 秒后自动退出（可用 `AGENT_DB_DAEMON_IDLE_SECS` 覆盖）
+- 通过本地 daemon 短时间保持连接，单个数据库连接默认空闲 `600` 秒释放
 - daemon 在 Windows 使用 named pipe，在 macOS/Linux 使用 Unix socket
 - 预编译二进制支持 macOS x64/arm64、Linux x64/arm64、Windows x64
 - Oracle 默认使用 SQLcl；显式配置 `oracleDriver: "oracle"` 或 `"oracledb"` 时使用原生 Oracle 驱动
@@ -92,7 +92,7 @@ AGENT_DATABASE_CLI_CONFIG=/path/to/config.json agent-database-cli list
       "url": "mysql://user:password@localhost:3306/app",
       "readonly": true,
       "blacklist": ["drop", "truncate", "delete"],
-      "keepAliveSeconds": 180
+      "keepAliveSeconds": 600
     }
   }
 }
@@ -106,7 +106,12 @@ AGENT_DATABASE_CLI_CONFIG=/path/to/config.json agent-database-cli list
 - `database`: MongoDB 默认数据库名，可选
 - `readonly`: 是否启用只读模式
 - `blacklist`: 命令黑名单数组，大小写不敏感
-- `keepAliveSeconds`: daemon 连接空闲释放秒数，默认 `180`
+- `keepAliveSeconds`: daemon 连接空闲释放秒数，默认 `600`
+
+查询 / 空闲相关环境变量（daemon **启动时**读取，改完需 `daemon stop` 再生效）：
+- `AGENT_DB_QUERY_TIMEOUT_SECS`：单次请求响应超时，默认 `60`
+- `AGENT_DB_DAEMON_IDLE_SECS`：daemon 空闲自动退出秒数，默认 `1800`
+
 - `oracleDriver`: Oracle 驱动，可选 `oracledb` 或 `sqlcl`
 - `sqlclPath`: SQLcl 可执行文件路径
 - `javaHome`: SQLcl 使用的 `JAVA_HOME`
@@ -204,7 +209,7 @@ agent-database-cli meta --db "<databaseName>" --type keys --pattern "user:*"
 
 ## daemon
 
-管理本地连接守护进程。普通 `test`、`exec`、`meta`、`reset` 命令会在 daemon 未运行时自动启动 daemon，已运行时直接复用，不会重复启动。daemon 使用 Unix socket，不暴露网络端口，默认空闲 `300` 秒后自动退出。
+管理本地连接守护进程。普通 `test`、`exec`、`meta`、`reset` 命令会在 daemon 未运行时自动启动 daemon，已运行时直接复用，不会重复启动。daemon 使用 Unix socket，不暴露网络端口，默认空闲 `1800` 秒后自动退出（可用 `AGENT_DB_DAEMON_IDLE_SECS` 覆盖）。
 
 ```bash
 agent-database-cli daemon start
