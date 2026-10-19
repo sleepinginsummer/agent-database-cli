@@ -5,6 +5,7 @@ use crate::utils::paths::runtime_dir;
 use anyhow::Result;
 use futures::FutureExt;
 use serde_json::{json, Value};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::{panic::AssertUnwindSafe, sync::Arc};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::sync::Mutex;
@@ -15,7 +16,13 @@ use tokio::net::windows::named_pipe::{NamedPipeServer, ServerOptions};
 #[cfg(unix)]
 use tokio::net::{UnixListener, UnixStream};
 
-const DAEMON_IDLE_SECONDS: u64 = 300;
+fn daemon_idle_seconds() -> u64 {
+    std::env::var("AGENT_DB_DAEMON_IDLE_SECS")
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
+        .filter(|value| *value > 0)
+        .unwrap_or(1800)
+}
 
 pub async fn run_server() -> Result<()> {
     #[cfg(unix)]
@@ -30,9 +37,11 @@ pub async fn run_server() -> Result<()> {
 
         let manager = Arc::new(Mutex::new(DaemonConfigManager::new()));
         let last_activity = Arc::new(Mutex::new(Instant::now()));
+        let active_requests = Arc::new(AtomicUsize::new(0));
         spawn_idle_shutdown(
             manager.clone(),
             last_activity.clone(),
+            active_requests.clone(),
             socket_path.clone(),
             pid_path.clone(),
         );
@@ -41,8 +50,11 @@ pub async fn run_server() -> Result<()> {
             let (stream, _) = listener.accept().await?;
             let manager = manager.clone();
             let last_activity = last_activity.clone();
+            let active_requests = active_requests.clone();
             tokio::spawn(async move {
-                if let Err(error) = handle_stream(stream, manager, last_activity).await {
+                if let Err(error) =
+                    handle_stream(stream, manager, last_activity, active_requests).await
+                {
                     debug_log(&format!(
                         "daemon 请求处理失败: {}",
                         to_error_message(&error)
@@ -61,15 +73,24 @@ pub async fn run_server() -> Result<()> {
 
         let manager = Arc::new(Mutex::new(DaemonConfigManager::new()));
         let last_activity = Arc::new(Mutex::new(Instant::now()));
-        spawn_idle_shutdown(manager.clone(), last_activity.clone(), pid_path.clone());
+        let active_requests = Arc::new(AtomicUsize::new(0));
+        spawn_idle_shutdown(
+            manager.clone(),
+            last_activity.clone(),
+            active_requests.clone(),
+            pid_path.clone(),
+        );
 
         loop {
             let server = ServerOptions::new().create(&pipe_name)?;
             server.connect().await?;
             let manager = manager.clone();
             let last_activity = last_activity.clone();
+            let active_requests = active_requests.clone();
             tokio::spawn(async move {
-                if let Err(error) = handle_stream(server, manager, last_activity).await {
+                if let Err(error) =
+                    handle_stream(server, manager, last_activity, active_requests).await
+                {
                     debug_log(&format!(
                         "daemon 请求处理失败: {}",
                         to_error_message(&error)
@@ -85,8 +106,9 @@ async fn handle_stream(
     stream: UnixStream,
     manager: Arc<Mutex<DaemonConfigManager>>,
     last_activity: Arc<Mutex<Instant>>,
+    active_requests: Arc<AtomicUsize>,
 ) -> Result<()> {
-    handle_duplex_stream(stream, manager, last_activity).await
+    handle_duplex_stream(stream, manager, last_activity, active_requests).await
 }
 
 #[cfg(windows)]
@@ -94,14 +116,16 @@ async fn handle_stream(
     stream: NamedPipeServer,
     manager: Arc<Mutex<DaemonConfigManager>>,
     last_activity: Arc<Mutex<Instant>>,
+    active_requests: Arc<AtomicUsize>,
 ) -> Result<()> {
-    handle_duplex_stream(stream, manager, last_activity).await
+    handle_duplex_stream(stream, manager, last_activity, active_requests).await
 }
 
 async fn handle_duplex_stream<S>(
     stream: S,
     manager: Arc<Mutex<DaemonConfigManager>>,
     last_activity: Arc<Mutex<Instant>>,
+    active_requests: Arc<AtomicUsize>,
 ) -> Result<()>
 where
     S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
@@ -110,7 +134,9 @@ where
     let mut reader = BufReader::new(stream);
     let mut line = String::new();
     reader.read_line(&mut line).await?;
+    active_requests.fetch_add(1, Ordering::SeqCst);
     let response = build_response(line.trim(), manager).await;
+    active_requests.fetch_sub(1, Ordering::SeqCst);
     *last_activity.lock().await = Instant::now();
     let mut stream = reader.into_inner();
     stream
@@ -228,16 +254,23 @@ fn debug_log(message: &str) {
 fn spawn_idle_shutdown(
     manager: Arc<Mutex<DaemonConfigManager>>,
     last_activity: Arc<Mutex<Instant>>,
+    active_requests: Arc<AtomicUsize>,
     socket_path: std::path::PathBuf,
     pid_path: std::path::PathBuf,
 ) {
     tokio::spawn(async move {
         loop {
             sleep(Duration::from_secs(5)).await;
+            if active_requests.load(Ordering::SeqCst) > 0 {
+                continue;
+            }
             let mut guard = manager.lock().await;
             let _ = guard.cleanup_idle().await;
+            if active_requests.load(Ordering::SeqCst) > 0 {
+                continue;
+            }
             let idle_for = Instant::now().duration_since(*last_activity.lock().await);
-            if idle_for >= Duration::from_secs(DAEMON_IDLE_SECONDS) {
+            if idle_for >= Duration::from_secs(daemon_idle_seconds()) {
                 let _ = guard.close_all().await;
                 let _ = tokio::fs::remove_file(&socket_path).await;
                 let _ = tokio::fs::remove_file(&pid_path).await;
@@ -251,15 +284,22 @@ fn spawn_idle_shutdown(
 fn spawn_idle_shutdown(
     manager: Arc<Mutex<DaemonConfigManager>>,
     last_activity: Arc<Mutex<Instant>>,
+    active_requests: Arc<AtomicUsize>,
     pid_path: std::path::PathBuf,
 ) {
     tokio::spawn(async move {
         loop {
             sleep(Duration::from_secs(5)).await;
+            if active_requests.load(Ordering::SeqCst) > 0 {
+                continue;
+            }
             let mut guard = manager.lock().await;
             let _ = guard.cleanup_idle().await;
+            if active_requests.load(Ordering::SeqCst) > 0 {
+                continue;
+            }
             let idle_for = Instant::now().duration_since(*last_activity.lock().await);
-            if idle_for >= Duration::from_secs(DAEMON_IDLE_SECONDS) {
+            if idle_for >= Duration::from_secs(daemon_idle_seconds()) {
                 let _ = guard.close_all().await;
                 let _ = tokio::fs::remove_file(&pid_path).await;
                 std::process::exit(0);

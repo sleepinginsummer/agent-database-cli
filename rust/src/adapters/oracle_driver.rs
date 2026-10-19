@@ -19,8 +19,11 @@ impl OracleAdapter {
     async fn query(&mut self, command: &str) -> Result<QueryResult> {
         let url = self.url.clone();
         let command = command.to_string();
+        let timeout_secs = query_timeout_secs();
         task::spawn_blocking(move || {
             let connection = connect_oracle(&url)?;
+            // OCI call timeout cancels work in the blocking pool, not only the Tokio deadline.
+            connection.set_call_timeout(Some(std::time::Duration::from_secs(timeout_secs)))?;
             execute_query(&connection, &command)
         })
         .await?
@@ -62,6 +65,14 @@ impl DatabaseAdapter for OracleAdapter {
             _ => anyhow::bail!("当前数据库不支持元信息类型: {:?}", request.request_type),
         }
     }
+}
+
+fn query_timeout_secs() -> u64 {
+    std::env::var("AGENT_DB_QUERY_TIMEOUT_SECS")
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
+        .filter(|value| *value > 0)
+        .unwrap_or(60)
 }
 
 fn connect_oracle(url: &str) -> Result<Connection> {

@@ -9,6 +9,29 @@ pub mod oracle_sqlcl;
 pub mod postgres;
 pub mod redis_driver;
 
+#[derive(Clone)]
+pub enum SharedDbHandle {
+    Mysql(mysql_async::Pool),
+}
+
+impl SharedDbHandle {
+    pub async fn test(&self) -> Result<()> {
+        self.execute("select 1").await.map(|_| ())
+    }
+
+    pub async fn execute(&self, command: &str) -> Result<QueryResult> {
+        match self {
+            SharedDbHandle::Mysql(pool) => mysql::query_with_pool(pool, command).await,
+        }
+    }
+
+    pub async fn metadata(&self, request: MetadataRequest) -> Result<QueryResult> {
+        match self {
+            SharedDbHandle::Mysql(pool) => mysql::metadata_with_pool(pool, request).await,
+        }
+    }
+}
+
 #[async_trait]
 pub trait DatabaseAdapter: Send {
     async fn connect(&mut self) -> Result<()>;
@@ -16,6 +39,11 @@ pub trait DatabaseAdapter: Send {
     async fn test(&mut self) -> Result<()>;
     async fn execute(&mut self, command: &str) -> Result<QueryResult>;
     async fn metadata(&mut self, request: MetadataRequest) -> Result<QueryResult>;
+
+    /// When present, the connection manager can run queries without holding the entry lock.
+    fn shared_handle(&self) -> Option<SharedDbHandle> {
+        None
+    }
 }
 
 pub fn create_adapter(config: &DatabaseConfig) -> Result<Box<dyn DatabaseAdapter>> {
