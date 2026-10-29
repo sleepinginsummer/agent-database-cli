@@ -317,3 +317,27 @@ fn redis_value_to_json(value: RedisValue) -> Value {
         other => Value::String(format!("{:?}", other)),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use redis::ConnectionAddr;
+
+    #[test]
+    fn rediss_url_is_parsed_as_tls_address() {
+        let client = Client::open("rediss://cache.example.com:6379").expect("rediss URL 应可解析");
+        match &client.get_connection_info().addr {
+            ConnectionAddr::TcpTls { insecure, .. } => assert!(!insecure),
+            other => panic!("rediss 应解析为 TcpTls，实际为 {:?}", other),
+        }
+    }
+
+    #[test]
+    fn redis_url_is_parsed_as_plain_address() {
+        let client = Client::open("redis://cache.example.com:6379").expect("redis URL 应可解析");
+        assert!(matches!(
+            &client.get_connection_info().addr,
+            ConnectionAddr::Tcp(..)
+        ));
+    }
+}

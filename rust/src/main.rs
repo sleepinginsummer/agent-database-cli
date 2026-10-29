@@ -124,6 +124,8 @@ enum EditorCommands {
 
 #[tokio::main]
 async fn main() {
+    // rustls 的 ring 与 aws-lc-rs 同时启用时没有进程级默认 provider，首个 TLS 建连会 panic。
+    let _ = rustls::crypto::ring::default_provider().install_default();
     if let Err(error) = run().await {
         eprintln!("{}", utils::masking::to_error_message(&error));
         std::process::exit(1);

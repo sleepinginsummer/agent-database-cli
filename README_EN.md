@@ -150,6 +150,12 @@ Redis cluster notes:
 - When `sshTunnel` is also configured, the program creates a local forwarded port for each cluster node and uses address mapping for cluster redirects
 - With SSH tunneling, `redisCluster.nodes` should cover the cluster node addresses that the client may be redirected to
 
+Redis TLS:
+
+- A `rediss://` URL connects over TLS, with certificates verified against the bundled root certificates. Cluster nodes in `redisCluster.nodes` also accept `rediss://`
+- Skipping certificate verification is not supported, so self-signed certificates and private CAs cannot be used
+- SSH tunnels rewrite the host to `127.0.0.1` and certificate verification uses the rewritten address, so `rediss://` cannot be combined with `sshTunnel` unless the certificate covers `127.0.0.1`
+
 `sshTunnel` supports password, private key, password plus private key, and passphrase-protected private key authentication:
 
 - `host`: SSH jump host address
@@ -202,6 +208,13 @@ Reference configuration:
       "type": "redis",
       "url": "redis://localhost:6379",
       "readonly": false,
+      "blacklist": ["flushall", "flushdb"],
+      "keepAliveSeconds": 180
+    },
+    "redis-tls": {
+      "type": "redis",
+      "url": "rediss://user:password@cache.example.com:6379",
+      "readonly": true,
       "blacklist": ["flushall", "flushdb"],
       "keepAliveSeconds": 180
     },
