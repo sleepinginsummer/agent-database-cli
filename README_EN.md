@@ -350,7 +350,13 @@ The command prints the page address `http://127.0.0.1:<port>/#t=<token>`.
 | Idle exit | The service exits by itself and cleans up its state file after `10` minutes without any activity; the page keeps it alive with periodic pings while you are interacting and stops pinging once you leave it alone |
 | Target file | `${AGENT_DATABASE_CLI_CONFIG:-~/.agent-database-cli/config.json}` |
 
+The page has three columns: the connection list on the left (`全部` / `按分组` / `按标签`), the field form for the selected connection in the middle, and the JSON about to be written to disk on the right.
+
+![Editor: connections grouped by group, with the JSON panel showing the current connection](docs/images/editor-overview.webp)
+
 The page only shows fields that apply to the selected `type`, splits the connection URL into username, password, host, port, and database, and draws the local → SSH jump host → database path.
+
+![Editor: SSH jump host path, read-only mode, command blocklist and JSON panel](docs/images/editor-ssh-tunnel.webp)
 
 The JSON panel on the right shows exactly what will be written to disk and stays editable, with live validation that syncs back to the form:
 

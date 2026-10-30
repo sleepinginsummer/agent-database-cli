@@ -369,7 +369,13 @@ agent-database-cli editor stop
 | 空闲退出 | 超过 `10` 分钟没有任何操作，服务会自己退出并清理状态文件；页面在有操作时会定期打点保活，停手后不再打点 |
 | 目标文件 | `${AGENT_DATABASE_CLI_CONFIG:-~/.agent-database-cli/config.json}` |
 
+页面分三栏：左侧是连接列表，可切换「全部 / 按分组 / 按标签」；中间是当前连接的字段表单；右侧是即将写入磁盘的 JSON 面板。
+
+![编辑页面：按分组浏览连接，右侧 JSON 面板显示当前连接内容](docs/images/editor-overview.webp)
+
 页面按 `type` 只展示当前数据库可用的字段，连接 URL 会自动拆出用户名、密码、主机、端口和库名，并画出本机 → SSH 跳板 → 数据库的访问路径。
+
+![编辑页面：SSH 跳板访问路径、只读模式、命令黑名单与 JSON 面板](docs/images/editor-ssh-tunnel.webp)
 
 右侧 JSON 面板显示即将写入磁盘的完整内容，也可以直接编辑文本，编辑结果实时校验并同步回表单：
 
