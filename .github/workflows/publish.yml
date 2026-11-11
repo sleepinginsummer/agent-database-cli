@@ -33,13 +33,13 @@ jobs:
             cpu: arm64
             binary: agent-database-cli
           - target: x86_64-apple-darwin
-            runner: macos-14
+            runner: macos-15-intel
             package: darwin-x64
             os: darwin
             cpu: x64
             binary: agent-database-cli
           - target: aarch64-apple-darwin
-            runner: macos-14
+            runner: macos-15
             package: darwin-arm64
             os: darwin
             cpu: arm64
