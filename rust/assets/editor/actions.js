@@ -81,12 +81,18 @@
     const name = S.selected;
     const body = JSON.stringify({ name, database: cleanDatabase(current()) });
     testingConnection = true;
+    const result = $("#connectionResult");
+    if (result) result.textContent = "";
     const button = $('[data-act="test-connection"]');
     button.disabled = true;
     button.textContent = "测试中…";
     try {
       await api("/api/test-connection", { method: "POST", body });
-      toast(name + "：连接成功");
+      // 异步完成时只更新发起测试的连接，避免把结果显示到其他连接。
+      if (S.selected === name && JSON.stringify({ name, database: cleanDatabase(current()) }) === body) {
+        const result = $("#connectionResult");
+        if (result) result.textContent = "连接成功";
+      }
     } catch (error) {
       toast(name + "：" + error.message, "err");
     } finally {
@@ -176,6 +182,68 @@
      ========================================================== */
   const board = $("#board");
   const rawInput = $("#rawInput");
+
+  // 候选列表保留输入焦点；鼠标与键盘共用选择逻辑，标签仍按完整文本添加。
+  function closeSuggestions(input) {
+    const menu = document.getElementById(input.getAttribute("aria-controls"));
+    if (menu) menu.hidden = true;
+    input.setAttribute("aria-expanded", "false");
+    input.removeAttribute("aria-activedescendant");
+  }
+  function showSuggestions(input) {
+    const menu = document.getElementById(input.getAttribute("aria-controls"));
+    const tags = input.id === "tagInput";
+    const values = [...new Set(Object.values(databases()).flatMap(db => tags ? databaseTags(db) : [databaseGroup(db)]))];
+    const query = input.value.trim().toLocaleLowerCase();
+    const filtered = values.filter(value => value && value.toLocaleLowerCase().includes(query) && (!tags || !databaseTags(current()).includes(value)));
+    menu.innerHTML = filtered.map((value, index) => '<div class="suggest-option" role="option" aria-selected="false" id="' + menu.id + '-' + index + '" data-suggestion="' + esc(JSON.stringify(value)) + '">' + esc(value) + '</div>').join("");
+    menu.hidden = !filtered.length;
+    input.setAttribute("aria-expanded", String(Boolean(filtered.length)));
+    input.removeAttribute("aria-activedescendant");
+  }
+  function chooseSuggestion(input, option) {
+    input.value = JSON.parse(option.dataset.suggestion);
+    closeSuggestions(input);
+    if (input.id === "tagInput") commitTagInput();
+    else input.dispatchEvent(new Event("input", { bubbles: true }));
+    closeSuggestions(input.id === "tagInput" ? $("#tagInput") : input);
+  }
+  board.addEventListener("focusin", event => {
+    if (event.target.matches('[role="combobox"]')) showSuggestions(event.target);
+  });
+  board.addEventListener("focusout", event => {
+    if (event.target.matches('[role="combobox"]')) closeSuggestions(event.target);
+  });
+  board.addEventListener("input", event => {
+    if (event.target.matches('[role="combobox"]')) showSuggestions(event.target);
+  });
+  board.addEventListener("pointerdown", event => {
+    const option = event.target.closest("[data-suggestion]");
+    if (!option) return;
+    event.preventDefault();
+    chooseSuggestion(option.closest(".suggest-field").querySelector('[role="combobox"]'), option);
+  });
+  board.addEventListener("keydown", event => {
+    const input = event.target;
+    if (!input.matches('[role="combobox"]') || event.isComposing) return;
+    const menu = document.getElementById(input.getAttribute("aria-controls"));
+    if (event.key === "Escape") { closeSuggestions(input); event.stopPropagation(); return; }
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      if (menu.hidden) showSuggestions(input);
+      const options = Array.from(menu.children);
+      if (!options.length) return;
+      const active = options.findIndex(option => option.getAttribute("aria-selected") === "true");
+      const index = (active + (event.key === "ArrowDown" ? 1 : (active < 0 ? 0 : -1)) + options.length) % options.length;
+      options.forEach((option, i) => option.setAttribute("aria-selected", String(i === index)));
+      input.setAttribute("aria-activedescendant", options[index].id);
+      options[index].scrollIntoView({ block: "nearest" });
+      event.stopPropagation();
+    } else if (event.key === "Enter" && !menu.hidden) {
+      const option = menu.querySelector('[aria-selected="true"]');
+      if (option) { event.preventDefault(); event.stopImmediatePropagation(); chooseSuggestion(input, option); }
+    }
+  }, true);
   $("#railSearch").addEventListener("input", (event) => {
     S.search = event.target.value;
     renderRail();
@@ -195,6 +263,8 @@
 
   board.addEventListener("input", (event) => {
     const element = event.target;
+    const result = $("#connectionResult");
+    if (result) result.textContent = "";
     if (element.id === "nameInput") {
       const failure = renameDatabaseKey(S.selected, element.value);
       element.classList.toggle("bad", Boolean(failure));

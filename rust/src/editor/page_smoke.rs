@@ -68,10 +68,30 @@ const HARNESS: &str = r##"<script>
     }
     finishTest(new Response(JSON.stringify({ error: "连接失败测试" }), { status: 400 }));
     if (!await until(() => !testButton.disabled)) result.errors.push("测试连接按钮未恢复");
+    testButton.click();
+    finishTest(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+    if (!await until(() => document.querySelector("#connectionResult").textContent === "连接成功")) {
+      result.errors.push("连接成功未显示在按钮前");
+    }
+    if (testButton.previousElementSibling.id !== "connectionResult") result.errors.push("连接结果位置错误");
     window.fetch = originalFetch;
     if (document.querySelector("#rawInput").value !== draftBeforeTest) {
       result.errors.push("测试连接改动了配置");
     }
+    // 分组候选支持键盘选择，且不再交给浏览器原生 datalist 绘制。
+    const groupInput = document.querySelector('[data-bind="group"]');
+    const originalGroup = groupInput.value;
+    groupInput.value = "候选测试";
+    groupInput.dispatchEvent(new Event("input", { bubbles: true }));
+    groupInput.focus();
+    groupInput.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
+    if (!groupInput.getAttribute("aria-activedescendant")) result.errors.push("分组候选键盘选择失败");
+    groupInput.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    if (groupInput.value !== "候选测试" || groupInput.getAttribute("aria-expanded") !== "false") result.errors.push("分组候选未正确提交并关闭");
+    if (document.querySelector("datalist")) result.errors.push("仍存在原生候选下拉");
+    groupInput.value = originalGroup;
+    groupInput.dispatchEvent(new Event("input", { bubbles: true }));
+    groupInput.blur();
     // 4) 布局：同一行里图标和文字的垂直中心不能偏（已加密胶囊踩过这个坑）
     let worst = 0;
     document.querySelectorAll("body *").forEach((element) => {

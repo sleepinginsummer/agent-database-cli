@@ -229,6 +229,13 @@ body:not(.booted) .dot-dirty{animation:blink 1.8s var(--ease) 2}
 .wire-db{display:inline-flex;align-items:center;gap:6px;padding:6px 2px;color:var(--text);font:12.5px/1 var(--mono)}
 
 /* ---------- 分组与字段 ---------- */
+.connection-result{color:var(--ok);font-size:12px;white-space:nowrap}
+.connection-result:empty{display:none}
+.suggest-field{position:relative;min-width:0}
+.suggest-menu{position:absolute;top:calc(100% + 6px);left:0;right:0;z-index:20;max-height:210px;overflow:auto;padding:5px;border:1px solid var(--line-2);border-radius:var(--r);background:var(--ink-2);box-shadow:0 12px 28px #0005}
+.suggest-menu[hidden]{display:none}
+.suggest-option{padding:9px 12px;border-radius:5px;color:var(--text);cursor:pointer;overflow-wrap:anywhere}
+.suggest-option:hover,.suggest-option[aria-selected="true"]{background:var(--copper-soft);color:var(--copper)}
 .group{margin-top:26px;border-top:1px solid var(--line);padding-top:16px}
 .group-head{display:flex;align-items:center;gap:12px}
 .group-title{

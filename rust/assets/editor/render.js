@@ -209,7 +209,7 @@
       ' aria-label="' + (tags ? "移除标签 " + esc(value) : "移除") + '">' + icon("x", "i-s") + '</button></span>'
     ).join("");
     return '<div class="chips" data-chips="' + (tags ? "tags" : "blacklist") + '">' + chips +
-      '<input class="chip-input" id="' + (tags ? "tagInput" : "chipInput") + '"' + (tags ? ' list="tagOptions"' : '') + ' placeholder="' + ((values || []).length ? "继续添加" : (tags ? "输入或选择标签后回车" : "输入命令后回车")) + '" spellcheck="false" autocomplete="off" aria-label="' + (tags ? "添加标签" : "添加黑名单命令") + '"></div>';
+      '<input class="chip-input" id="' + (tags ? "tagInput" : "chipInput") + '"' + (tags ? ' role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="tagOptions"' : '') + ' placeholder="' + ((values || []).length ? "继续添加" : (tags ? "输入或选择标签后回车" : "输入命令后回车")) + '" spellcheck="false" autocomplete="off" aria-label="' + (tags ? "添加标签" : "添加黑名单命令") + '"></div>';
   }
 
   let boardHtml = "";
@@ -261,6 +261,7 @@
       '<div class="head-top">' +
       '<span class="eyebrow">' + icon("database", "i-s") + '<span>' + esc(type) + '</span></span>' +
       '<div class="head-tools">' +
+      '<span id="connectionResult" class="connection-result" role="status"></span>' +
       '<button class="btn" type="button" data-act="test-connection"' + (testingConnection ? ' disabled' : '') + '>' +
       (testingConnection ? '测试中…' : '测试连接') + '</button>' +
       '<button class="icon-btn" data-act="duplicate" title="复制连接">' + icon("copy", "i-s") + '</button>' +
@@ -287,13 +288,10 @@
   }
 
   function renderClassificationGroup(db) {
-    const groups = [...new Set(Object.values(databases()).map(databaseGroup).filter(Boolean))];
-    const tags = [...new Set(Object.values(databases()).flatMap(databaseTags))];
-    const options = (values) => values.map((value) => '<option value="' + esc(value) + '"></option>').join("");
-    const groupControl = '<input class="inp" data-bind="group" value="' + esc(databaseGroup(db) || "") + '" list="groupOptions" placeholder="未分组" autocomplete="off" aria-label="分组"><datalist id="groupOptions">' + options(groups) + '</datalist>';
+    const groupControl = '<div class="suggest-field"><input class="inp" data-bind="group" value="' + esc(databaseGroup(db) || "") + '" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="groupOptions" placeholder="未分组" autocomplete="off" aria-label="分组"><div class="suggest-menu" id="groupOptions" role="listbox" aria-label="分组" hidden></div></div>';
     const body = '<div class="grid">' +
       field("分组", groupControl, { icon: "folder-open" }) +
-      field("标签", chipsField(databaseTags(db), "tags") + '<datalist id="tagOptions">' + options(tags) + '</datalist>', { icon: "hash" }) + '</div>';
+      field("标签", '<div class="suggest-field">' + chipsField(databaseTags(db), "tags") + '<div class="suggest-menu" id="tagOptions" role="listbox" aria-label="标签" hidden></div></div>', { icon: "hash" }) + '</div>';
     return group({ title: "分组与标签", icon: "folder-open", delay: 65 }, body);
   }
 
