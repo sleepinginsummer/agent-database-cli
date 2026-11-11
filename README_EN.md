@@ -352,6 +352,8 @@ The command prints the page address `http://127.0.0.1:<port>/#t=<token>`.
 
 The page has three columns: the connection list on the left (`全部` / `按分组` / `按标签`), the field form for the selected connection in the middle, and the JSON about to be written to disk on the right.
 
+Click **测试连接** in the connection details to test the current form, including unsaved changes, without writing the configuration. For Oracle SQLcl, save and use the CLI's `test` command.
+
 ![Editor: connections grouped by group, with the JSON panel showing the current connection](docs/images/editor-overview.webp)
 
 The page only shows fields that apply to the selected `type`, splits the connection URL into username, password, host, port, and database, and draws the local → SSH jump host → database path.

@@ -261,6 +261,8 @@
       '<div class="head-top">' +
       '<span class="eyebrow">' + icon("database", "i-s") + '<span>' + esc(type) + '</span></span>' +
       '<div class="head-tools">' +
+      '<button class="btn" type="button" data-act="test-connection"' + (testingConnection ? ' disabled' : '') + '>' +
+      (testingConnection ? '测试中…' : '测试连接') + '</button>' +
       '<button class="icon-btn" data-act="duplicate" title="复制连接">' + icon("copy", "i-s") + '</button>' +
       '<button class="icon-btn danger" data-act="remove" title="删除连接">' + icon("trash-2", "i-s") + '</button>' +
       '</div></div>' +

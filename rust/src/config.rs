@@ -238,7 +238,7 @@ fn migrate_nested_secret(
     Ok(true)
 }
 
-fn resolve_secret_refs(path: &Path, config: &mut AppConfig) -> Result<()> {
+pub(crate) fn resolve_secret_refs(path: &Path, config: &mut AppConfig) -> Result<()> {
     for (name, db) in &mut config.databases {
         resolve_url_password_ref(path, name, db)?;
         if let Some(tunnel) = &mut db.ssh_tunnel {

@@ -214,11 +214,72 @@ async fn route(
             Ok(payload) => HttpResponse::json(200, &payload),
             Err(failure) => HttpResponse::failure(failure),
         },
+        ("POST", "/api/test-connection") => match request.json_body() {
+            Ok(body) => match test_connection(config_path, &body).await {
+                Ok(payload) => HttpResponse::json(200, &payload),
+                Err(failure) => HttpResponse::failure(failure),
+            },
+            Err(failure) => HttpResponse::failure(failure),
+        },
         ("POST", "/api/shutdown") => {
             let _ = shutdown_tx.send(true);
             HttpResponse::json(200, &json!({ "stopping": true }))
         }
         _ => HttpResponse::failure(ApiFailure::not_found(format!("未知接口: {path}"))),
+    }
+}
+
+/// 用单次连接管理器测试当前草稿，避免写配置或复用 daemon 中的旧连接。
+async fn test_connection(path: &Path, body: &Value) -> Result<Value, ApiFailure> {
+    let name = body
+        .get("name")
+        .and_then(Value::as_str)
+        .filter(|name| !name.trim().is_empty())
+        .ok_or_else(|| ApiFailure::bad_request("连接名称不能为空"))?;
+    let db: crate::types::DatabaseConfig = serde_json::from_value(body["database"].clone())
+        .map_err(|_| ApiFailure::bad_request("连接配置格式不正确，请检查字段"))?;
+    // SQLcl 会启动可配置的程序并执行脚本；编辑器接口不开放这条执行路径。
+    if db.db_type == crate::types::DatabaseType::Oracle
+        && !matches!(
+            db.oracle_driver,
+            Some(crate::types::OracleDriver::Oracle | crate::types::OracleDriver::Oracledb)
+        )
+    {
+        return Err(ApiFailure::bad_request(
+            "Oracle SQLcl 请保存后使用 CLI 的 test 命令",
+        ));
+    }
+    // 与显隐凭据接口保持一致，只接受当前配置中已经引用的密钥。
+    let tunnel = db.ssh_tunnel.as_ref();
+    for reference in [
+        db.password_ref.as_deref(),
+        tunnel.and_then(|value| value.password_ref.as_deref()),
+        tunnel.and_then(|value| value.passphrase_ref.as_deref()),
+    ]
+    .into_iter()
+    .flatten()
+    {
+        config_store::load_secret_payload(path, &json!({ "ref": reference }))?;
+    }
+    let mut config = crate::types::AppConfig {
+        databases: [(name.to_owned(), db)].into(),
+    };
+    crate::config::validate_config(&config)
+        .map_err(|error| ApiFailure::bad_request(error.to_string()))?;
+    crate::config::resolve_secret_refs(path, &mut config)
+        .map_err(|_| ApiFailure::bad_request("无法读取已保存的凭据，请重新填写后测试"))?;
+    let manager = crate::daemon::connection_manager::ConnectionManager::new(config);
+    // 给 HTTP 请求留出接收和回写时间；驱动原始错误可能包含凭据，不直接返回。
+    let result = timeout(Duration::from_secs(10), manager.test(name)).await;
+    match timeout(Duration::from_secs(1), manager.close_all()).await {
+        Ok(Ok(())) => {}
+        Ok(Err(_)) => debug_log("测试连接清理失败"),
+        Err(_) => debug_log("测试连接清理超时"),
+    }
+    match result {
+        Ok(Ok(payload)) => Ok(payload),
+        Ok(Err(_)) => Err(ApiFailure::bad_request("连接失败，请检查地址、凭据和网络")),
+        Err(_) => Err(ApiFailure::bad_request("连接测试超时，请检查地址和网络")),
     }
 }
 
@@ -296,6 +357,84 @@ mod tests {
         )
         .await;
         assert_eq!(wrong_token.status, 401);
+    }
+
+    #[tokio::test]
+    async fn test_connection_checks_draft_without_saving() -> Result<()> {
+        use tokio::io::{AsyncBufReadExt, BufReader};
+
+        let dir = crate::editor::test_support::TempDir::new("editor-test-connection");
+        let path = dir.path().join("config.json");
+        let listener = TcpListener::bind(("127.0.0.1", 0)).await?;
+        let address = listener.local_addr()?;
+        let server = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await?;
+            let mut reader = BufReader::new(stream);
+            let mut line = String::new();
+            // 消费 Redis 客户端初始化命令，再回复实际的 PING。
+            while reader.read_line(&mut line).await? != 0 {
+                let count: usize = line.trim_end().trim_start_matches('*').parse()?;
+                let mut ping = false;
+                for index in 0..count {
+                    line.clear();
+                    reader.read_line(&mut line).await?;
+                    let size: usize = line.trim_end().trim_start_matches('$').parse()?;
+                    let mut argument = vec![0; size + 2];
+                    reader.read_exact(&mut argument).await?;
+                    ping |= index == 0 && argument == b"PING\r\n";
+                }
+                let reply: &[u8] = if ping { b"+PONG\r\n" } else { b"+OK\r\n" };
+                reader.get_mut().write_all(reply).await?;
+                if ping {
+                    return Ok::<(), anyhow::Error>(());
+                }
+                line.clear();
+            }
+            anyhow::bail!("未收到 PING")
+        });
+        let mut request = request("POST", "/api/test-connection", &[(TOKEN_HEADER, "secret")]);
+        request.body = serde_json::to_vec(&json!({
+            "name": "draft",
+            "database": {"type": "redis", "url": format!("redis://{address}/")}
+        }))?;
+        assert_eq!(
+            route(&request, "wrong-token", &path, 1, &shutdown())
+                .await
+                .status,
+            401
+        );
+        let response = route(&request, "secret", &path, 1, &shutdown()).await;
+        assert_eq!(
+            response.status,
+            200,
+            "{}",
+            String::from_utf8_lossy(&response.body)
+        );
+        server.await??;
+
+        // 同一地址的测试服务已退出，重测应失败，不复用旧连接。
+        let response = route(&request, "secret", &path, 1, &shutdown()).await;
+        assert_eq!(response.status, 400);
+        assert!(!path.exists());
+        Ok(())
+    }
+    #[tokio::test]
+    async fn test_connection_rejects_invalid_drafts_and_unknown_secrets() {
+        let dir = crate::editor::test_support::TempDir::new("editor-invalid-test");
+        let path = dir.path().join("config.json");
+        for body in [
+            json!({ "name": "", "database": {} }),
+            json!({ "name": "draft", "database": {"type": "redis", "url": ""} }),
+            json!({ "name": "draft", "database": {
+                "type": "redis", "url": "redis://127.0.0.1/", "passwordRef": "unknown"
+            } }),
+            json!({ "name": "draft", "database": {
+                "type": "oracle", "url": "oracle://user:pass@127.0.0.1/service"
+            } }),
+        ] {
+            assert_eq!(test_connection(&path, &body).await.unwrap_err().status, 400);
+        }
+        assert!(!path.exists());
     }
 
     #[tokio::test]

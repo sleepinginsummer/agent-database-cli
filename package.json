@@ -1,6 +1,6 @@
 {
   "name": "agent-database-cli",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "description": "统一数据库命令行工具，支持只读、黑名单和本地连接守护进程。",
   "type": "module",
   "bin": {
@@ -27,11 +27,11 @@
     "config/docker-test.json"
   ],
   "optionalDependencies": {
-    "@agent-database-cli/darwin-arm64": "0.4.1",
-    "@agent-database-cli/darwin-x64": "0.4.1",
-    "@agent-database-cli/linux-arm64": "0.4.1",
-    "@agent-database-cli/linux-x64": "0.4.1",
-    "@agent-database-cli/win32-x64": "0.4.1"
+    "@agent-database-cli/darwin-arm64": "0.4.2",
+    "@agent-database-cli/darwin-x64": "0.4.2",
+    "@agent-database-cli/linux-arm64": "0.4.2",
+    "@agent-database-cli/linux-x64": "0.4.2",
+    "@agent-database-cli/win32-x64": "0.4.2"
   },
   "publishConfig": {
     "access": "public"

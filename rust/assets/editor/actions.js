@@ -71,6 +71,33 @@
     return null;
   }
 
+  let testingConnection = false;
+
+  async function testConnection() {
+    if (testingConnection || !current()) return;
+    if (S.jsonError) { toast("JSON 无法解析，请先修正右侧文本", "err"); return; }
+    const issues = interactionIssues();
+    if (issues.length) { toast(issues[0], "err"); return; }
+    const name = S.selected;
+    const body = JSON.stringify({ name, database: cleanDatabase(current()) });
+    testingConnection = true;
+    const button = $('[data-act="test-connection"]');
+    button.disabled = true;
+    button.textContent = "测试中…";
+    try {
+      await api("/api/test-connection", { method: "POST", body });
+      toast(name + "：连接成功");
+    } catch (error) {
+      toast(name + "：" + error.message, "err");
+    } finally {
+      testingConnection = false;
+      const activeButton = $('[data-act="test-connection"]');
+      if (activeButton) {
+        activeButton.disabled = false;
+        activeButton.textContent = "测试连接";
+      }
+    }
+  }
   async function save() {
     if (S.busy) return;
     // 右侧文本解析失败时不能只写表单里的旧数据，先让用户修好文本
@@ -355,6 +382,7 @@
   const ACTIONS = {
     add: () => addConnection(),
     duplicate: () => duplicateConnection(),
+    "test-connection": () => testConnection(),
     remove: () => removeConnection(),
     "add-chip": (target) => { addChip(target.dataset.value); renderBoard(); renderDerived(); },
     "rm-tag": (target) => {

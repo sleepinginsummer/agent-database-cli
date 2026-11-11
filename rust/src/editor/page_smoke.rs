@@ -51,6 +51,27 @@ const HARNESS: &str = r##"<script>
     result.steps.rows = await until(() => document.querySelectorAll("#railList .row").length > 0);
     result.steps.rowCount = document.querySelectorAll("#railList .row").length;
 
+    // 测试按钮必须发送当前草稿，等待中禁用，失败后恢复且不改动 JSON。
+    const originalFetch = window.fetch;
+    const draftBeforeTest = document.querySelector("#rawInput").value;
+    let testBody;
+    let finishTest;
+    window.fetch = (url, options) => {
+      if (url !== "/api/test-connection") return originalFetch(url, options);
+      testBody = JSON.parse(options.body);
+      return new Promise((resolve) => { finishTest = resolve; });
+    };
+    const testButton = document.querySelector('[data-act="test-connection"]');
+    testButton.click();
+    if (!testBody || !testBody.database.url || !testButton.disabled) {
+      result.errors.push("测试连接未发送草稿或未禁用按钮");
+    }
+    finishTest(new Response(JSON.stringify({ error: "连接失败测试" }), { status: 400 }));
+    if (!await until(() => !testButton.disabled)) result.errors.push("测试连接按钮未恢复");
+    window.fetch = originalFetch;
+    if (document.querySelector("#rawInput").value !== draftBeforeTest) {
+      result.errors.push("测试连接改动了配置");
+    }
     // 4) 布局：同一行里图标和文字的垂直中心不能偏（已加密胶囊踩过这个坑）
     let worst = 0;
     document.querySelectorAll("body *").forEach((element) => {
