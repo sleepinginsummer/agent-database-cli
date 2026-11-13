@@ -155,6 +155,12 @@ Redis 集群使用规则：
 | 同时配置 `sshTunnel` | 程序会给每个集群节点分别建立本地端口转发，并通过地址映射接管集群节点跳转 |
 | 通过 SSH 隧道访问集群 | `redisCluster.nodes` 需要覆盖客户端实际可能访问到的集群节点地址 |
 
+Redis TLS：
+
+- URL 使用 `rediss://` 时以 TLS 连接，证书按内置根证书校验；集群模式下 `redisCluster.nodes` 同样支持 `rediss://`
+- 不支持跳过证书校验，自签证书或私有 CA 签发的证书无法通过校验
+- SSH 隧道会把 host 改写为 `127.0.0.1`，证书校验使用改写后的地址，因此 `sshTunnel` 与 `rediss://` 不能组合使用，除非证书本身覆盖 `127.0.0.1`
+
 SSH 隧道配置支持密码、私钥、密码加私钥、带通行短语的私钥认证。
 
 | 字段 | 默认值 | 说明 |
@@ -210,6 +216,13 @@ SSH 隧道配置支持密码、私钥、密码加私钥、带通行短语的私�
       "type": "redis",
       "url": "redis://localhost:6379",
       "readonly": false,
+      "blacklist": ["flushall", "flushdb"],
+      "keepAliveSeconds": 180
+    },
+    "redis-tls": {
+      "type": "redis",
+      "url": "rediss://user:password@cache.example.com:6379",
+      "readonly": true,
       "blacklist": ["flushall", "flushdb"],
       "keepAliveSeconds": 180
     },
