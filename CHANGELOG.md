@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.5.0
+
+- 新增 Redis TLS 支持：URL 使用 `rediss://` 时以加密连接访问，证书按内置根证书校验；集群模式下 `redisCluster.nodes` 同样支持 `rediss://`。
+- 启动时把 rustls 的 ring 安装为进程级默认 CryptoProvider，修复 ring 与 aws-lc-rs 同时启用时首个 TLS 建连 panic 的问题。
+- 限制：不支持跳过证书校验，自签证书与私有 CA 签发的证书无法通过校验；SSH 隧道会把 host 改写为 `127.0.0.1`，`sshTunnel` 不能与 `rediss://` 组合使用，除非证书本身覆盖该地址。
+- 验证：58 项测试通过，5 项实库测试忽略；对本地 TLS Redis（自签证书）确认 TLS 握手与证书校验路径生效，`redis://` 明文连接与集群解析回归通过。公信证书的 `rediss://` 实库端到端尚未验证。
+
 ## 0.4.4
 
 - 编辑页面的连接成功提示移至测试连接按钮左侧；重新测试或修改输入后清除旧提示。
